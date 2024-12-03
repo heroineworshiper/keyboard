@@ -1,0 +1,42 @@
+Convert a laptop keyboard to USB
+
+This was designed for the MP-09B23U4-6983 keyboard.
+
+The flat flex connector was digikey part number WM3381
+
+
+A useful laptop keyboard conversion is a harder problem than it seems. 
+The mane challenge is the behavior when multiple keys are pressed & a
+scanning algorithm which senses the very brief momentary presses.  These
+are not handled by the operating system.
+
+It needs to set the GND pins to push/pull mode.  Then it needs to raise
+them all to pull all the keys high instead of waiting for the pullup
+resistors.  This takes only 1 microsecond.  Then it needs to lower 1 GND
+to scan 1 sector.  This takes only 1 microsecond.  It needs to scan all
+the sectors about 200 times while remembering all the keys detected. 
+Then to debouce, it only sends 1 report after a complete integration
+which contains the change since the last integration.  100 scans take
+10ms.
+
+To speed up the scans, it used the last 8 pins as the GND & the 1st 17
+as the sense pins.
+
+It still dropped when multiple keys were pressed simultaneously instead
+of registering the latest keypress.  Fortunately, the scanning algorithm
+successfully detects simultaneous keypresses.  The next step was to
+buffer every keypress it detected & copy the latest keypress to the
+report.  It also needs to blacklist previous hits until they're
+released. It's actually very important to be able to press keys
+simultaneously & only show the latest key, then not show any previous
+keys until they're all released.
+
+It ended up needing a complicated algorithm to determine what keypress
+out of multiple keypresses should go in the report.  These are
+apparently steps all keyboards take, based on common typing behaviors. 
+There are still memories of the 1st IBM keyboards 45 years ago & how the
+behavior when multiple keys were pressed was so different than the
+commodore.  Who knew how much programming went into that algorithm.
+
+
+
