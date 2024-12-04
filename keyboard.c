@@ -51,6 +51,10 @@
 
 
 #define MAX_HITS 16
+// all keycodes detected in the previous integration
+int prev_hits[MAX_HITS];
+// all keycodes detected in the current integration
+int next_hits[MAX_HITS];
 // hits to ignore until they're released
 int blacklist[MAX_HITS];
 
@@ -364,6 +368,8 @@ void dump_pins(int test_pin)
 void blacklist_key(int code)
 {
     int i;
+    if(code == 0) return;
+
     for(i = 0; i < MAX_HITS; i++)
     {
         if(blacklist[i] == code) return;
@@ -382,11 +388,67 @@ void blacklist_key(int code)
 int is_blacklisted(int code)
 {
     int i;
+    if(code == 0) return 0;
     for(i = 0; i < MAX_HITS; i++)
     {
         if(blacklist[i] == code) return 1;
     }
     return 0;
+}
+
+// add momentary keypress to the next_hits
+void add_keypress(int code)
+{
+    int k;
+    for(k = 0; k < MAX_HITS; k++)
+    {
+        if(next_hits[k] == code)
+        {
+            break;
+        }
+        else
+        if(next_hits[k] == 0)
+        {
+            next_hits[k] = code;
+            break;
+        }
+    }
+}
+
+// the code exists in prev_hits
+int prev_exists(int code)
+{
+    int j;
+    if(code == 0) return 0;
+    for(j = 0; j < MAX_HITS; j++)
+    {
+        if(code == prev_hits[j])
+        {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+// the code exists in next_hits
+int next_exists(int code)
+{
+    int j;
+    if(code == 0) return 0;
+    for(j = 0; j < MAX_HITS; j++)
+    {
+        if(code == next_hits[j])
+        {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+// next hits have a value
+int has_next()
+{
+    return (next_hits[0] != 0);
 }
 
 int main(void)
@@ -455,10 +517,6 @@ int main(void)
     int tick = 0;
 // total scans in the integration
     int total_counter = 0;
-// all keycodes detected in the previous integration
-    int prev_hits[MAX_HITS];
-// all keycodes detected in the current integration
-    int next_hits[MAX_HITS];
     bzero(next_hits, sizeof(int) * MAX_HITS);
     bzero(prev_hits, sizeof(int) * MAX_HITS);
     bzero(blacklist, sizeof(int) * MAX_HITS);
@@ -535,20 +593,7 @@ int main(void)
                             total_mod |= current_key->mod;
                             if(current_key->momentary)
                             {
-// add keypress
-                                for(k = 0; k < MAX_HITS; k++)
-                                {
-                                    if(next_hits[k] == current_key->momentary)
-                                    {
-                                        break;
-                                    }
-                                    else
-                                    if(next_hits[k] == 0)
-                                    {
-                                        next_hits[k] = current_key->momentary;
-                                        break;
-                                    }
-                                }
+                                add_keypress(current_key->momentary);
                             }
                         }
                     }
@@ -566,28 +611,19 @@ int main(void)
                 if(next_hits[0] == 0)
                     bzero(blacklist, sizeof(int) * MAX_HITS);
 
-// get the 1st hit which is not in the previous hits
+// report the 1st hit which is not in the previous hits
                 current_report[2] = 0;
                 for(i = 0; i < MAX_HITS; i++)
                 {
                     if(next_hits[i] != 0)
                     {
-                        int got_it = 0;
-                        for(j = 0; j < MAX_HITS; j++)
-                        {
-                            if(next_hits[i] == prev_hits[j])
-                            {
-                                got_it = 1;
-                                break;
-                            }
-                        }
-                        if(!got_it)
+                        if(!prev_exists(next_hits[i]))
                         {
                             current_report[2] = next_hits[i];
-// blacklist the previous hits which are being ignored/
+// blacklist the hits which were ignored
                             for(k = 0; k < MAX_HITS; k++)
                             {
-                                if(k != i && next_hits[k])
+                                if(k != i)
                                 {
                                     blacklist_key(next_hits[k]);
                                 }
@@ -601,32 +637,23 @@ int main(void)
                     }
                 }
 
-// Get the 1st hit which is in the previous report
-                if(next_hits[0] != 0)
+// Reuse the previous report's key if it's still down
+                if(current_report[2] == 0)
                 {
-                    if(current_report[2] == 0)
-                    {
-                        for(i = 0; i < MAX_HITS; i++)
-                        {
-                            if(next_hits[i] != 0 && next_hits[i] == prev_report[2])
-                            {
-                                current_report[2] = next_hits[i];
-                                break;
-                            }
-                        }
-                    }
+                    if(next_exists(prev_report[2]))
+                        current_report[2] = prev_report[2];
+                }
 
 // Get the 1st hit which isn't blacklisted
-                    if(current_report[2] == 0)
+                if(current_report[2] == 0)
+                {
+                    for(i = 0; i < MAX_HITS; i++)
                     {
-                        for(i = 0; i < MAX_HITS; i++)
+                        if(next_hits[i] != 0 && 
+                            !is_blacklisted(next_hits[i]))
                         {
-                            if(next_hits[i] != 0 && 
-                                !is_blacklisted(next_hits[i]))
-                            {
-                                current_report[2] = next_hits[i];
-                                break;
-                            }
+                            current_report[2] = next_hits[i];
+                            break;
                         }
                     }
                 }

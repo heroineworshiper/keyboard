@@ -1,10 +1,33 @@
 Convert a laptop keyboard to USB
 
+
+Copyright (C) 2024 Adam Williams <broadcast at earthling dot net>
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 2 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+
+
+-------------------------------------------------------------------------
+
+
 This was designed for the MP-09B23U4-6983 keyboard.
 
 The flat flex connector was digikey part number WM3381
 
+It requires the stm32stuff package.  https://github.com/heroineworshiper/stm32stuff
 
+-----------------------------------------------------------------------
 A useful laptop keyboard conversion is a harder problem than it seems. 
 The mane challenge is the behavior when multiple keys are pressed & a
 scanning algorithm which senses the very brief momentary presses.  These
