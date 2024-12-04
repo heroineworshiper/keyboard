@@ -385,6 +385,17 @@ void blacklist_key(int code)
     }
 }
 
+// blacklist all the next hits except the given code
+void blacklist_except(int code)
+{
+    int k;
+    for(k = 0; k < MAX_HITS; k++)
+    {
+        if(next_hits[k] && next_hits[k] != code)
+            blacklist_key(next_hits[k]);
+    }
+}
+
 int is_blacklisted(int code)
 {
     int i;
@@ -615,24 +626,11 @@ int main(void)
                 current_report[2] = 0;
                 for(i = 0; i < MAX_HITS; i++)
                 {
-                    if(next_hits[i] != 0)
+                    if(next_hits[i] != 0 && !prev_exists(next_hits[i]))
                     {
-                        if(!prev_exists(next_hits[i]))
-                        {
-                            current_report[2] = next_hits[i];
-// blacklist the hits which were ignored
-                            for(k = 0; k < MAX_HITS; k++)
-                            {
-                                if(k != i)
-                                {
-                                    blacklist_key(next_hits[k]);
-                                }
-                            }
-                            break;
-                        }
-                    }
-                    else
-                    {
+                        current_report[2] = next_hits[i];
+// blacklist the hits which we're not using
+                        blacklist_except(next_hits[i]);
                         break;
                     }
                 }
@@ -640,7 +638,7 @@ int main(void)
 // Reuse the previous report's key if it's still down
                 if(current_report[2] == 0)
                 {
-                    if(next_exists(prev_report[2]))
+                    if(prev_report[2] && next_exists(prev_report[2]))
                         current_report[2] = prev_report[2];
                 }
 
