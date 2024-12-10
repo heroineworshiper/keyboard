@@ -27,6 +27,9 @@ The flat flex connector was digikey part number WM3381
 
 It requires the stm32stuff package.  https://github.com/heroineworshiper/stm32stuff
 
+The standard way of doing it nowadays is to buy an arduino Teensie & use
+the arduino keyboard library.  The STM32 was a spare part.
+
 -----------------------------------------------------------------------
 A useful laptop keyboard conversion is a harder problem than it seems. 
 The mane challenge is the behavior when multiple keys are pressed & a
@@ -60,6 +63,11 @@ apparently steps all keyboards take, based on common typing behaviors.
 There are still memories of the 1st IBM keyboards 45 years ago & how the
 behavior when multiple keys were pressed was so different than the
 commodore.  Who knew how much programming went into that algorithm.
+
+-------------------------------------------------------------------
+
+To wake up the host from suspend, USB needs to handle suspend properly &
+set DP low & DM high when the user presses a key.
 
 
 

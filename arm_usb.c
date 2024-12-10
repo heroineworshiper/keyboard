@@ -33,7 +33,7 @@
 // Have to disable interrupts & use handle_usb to print from the interrupt handlers
 //#define ENABLE_INTERRUPT
 
-extern int initialized;
+extern int connected;
 USB_OTG_CORE_HANDLE  USB_OTG_dev;
 
 #define USB_MAX_STR_DESC_SIZ         64 
@@ -420,8 +420,10 @@ static uint8_t  class_cb_Setup (void  *pdev,
     if((req->wValue >> 8) == USB_DESC_TYPE_HID_REPORT)
     {
         USBD_CtlSendData (pdev, hidReportDescriptor, sizeof(_hidReportDescriptor));
-
-        initialized = 1;
+// printing here seems to screw up the enumeration
+//print_text("connected\n");
+//flush_uart();
+        connected = 1;
         reset_uart();
     }
 
@@ -631,28 +633,25 @@ void USB_OTG_BSP_Init(USB_OTG_CORE_HANDLE *pdev)
 	BSP_delay = 0;
 #endif
 
+
+/* Configure DM DP Pins. Not necessary. */
   GPIO_InitTypeDef GPIO_InitStructure;
-
-  /* Configure DM DP Pins */
-// HS core
   GPIO_InitStructure.GPIO_Pin = GPIO_Pin_14 | GPIO_Pin_15;
-
   GPIO_InitStructure.GPIO_Speed = GPIO_Speed_100MHz;
   GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF;
   GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
   GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_UP;
-// HS core
   GPIO_Init(GPIOB, &GPIO_InitStructure);
   GPIO_PinAFConfig(GPIOB, GPIO_PinSource14, GPIO_AF_OTG2_FS);
   GPIO_PinAFConfig(GPIOB, GPIO_PinSource15, GPIO_AF_OTG2_FS);
 
 // The reference does this last
-  RCC_APB2PeriphClockCmd(RCC_APB2Periph_SYSCFG, ENABLE);
-  RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_OTG_HS, ENABLE) ; 
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_SYSCFG, ENABLE);
+    RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_OTG_HS, ENABLE) ; 
 
 
   /* Intialize Timer for delay function */
-  USB_OTG_BSP_TimeInit();   
+    USB_OTG_BSP_TimeInit();   
 
 }
 
@@ -699,6 +698,51 @@ void init_usb()
         &USR_desc, 
         &USBD_class_cb, 
         &USR_cb);
+}
+
+void close_usb()
+{
+// USB_StopDevice
+/* Clear Pending interrupt */
+    int i;
+    for (i = 0U; i < 15U; i++)
+    {
+        USB_OTG_dev.regs.INEP_REGS[i]->DIEPINT = 0xFB7FU;
+        USB_OTG_dev.regs.OUTEP_REGS[i]->DOEPINT = 0xFB7FU;
+    }
+
+/* Clear interrupt masks */
+    USB_OTG_dev.regs.DREGS->DIEPMSK = 0;
+    USB_OTG_dev.regs.DREGS->DOEPMSK = 0;
+    USB_OTG_dev.regs.DREGS->DAINT = 0xFFFFFFFF;
+    USB_OTG_dev.regs.DREGS->DAINTMSK = 0;
+
+// flush the FIFOs.
+// USB_FlushRxFifo
+    USB_OTG_dev.regs.GREGS->GRSTCTL |= (1 << 4); // flush rx
+    while(USB_OTG_dev.regs.GREGS->GRSTCTL & (1 << 4)) ;
+// USB_FlushTxFifo
+    USB_OTG_dev.regs.GREGS->GRSTCTL |= (1 << 5) | (0x10 << 6); // flush all tx
+    while(USB_OTG_dev.regs.GREGS->GRSTCTL & (1 << 5)) ;
+
+// USB_DevDisconnect
+// disable pullup resistor USB_OTG_DCTL_SDIS
+    USB_OTG_dev.regs.DREGS->DCTL = 0x2;
+
+
+/* Software Init */
+    USB_OTG_dev.regs.DREGS->DCFG = 0;
+
+    DCD_EP_Close(&USB_OTG_dev, EP1_IN_ID);
+    DCD_EP_Close(&USB_OTG_dev, 0x00);
+    DCD_EP_Close(&USB_OTG_dev, 0x80);
+
+    USB_OTG_dev.regs.GREGS->GAHBCFG = 0;
+    USB_OTG_dev.regs.GREGS->GINTMSK = 0;
+    USB_OTG_dev.regs.GREGS->GUSBCFG = 0;
+// power down.  page 977
+    USB_OTG_dev.regs.GREGS->GCCFG = 0;
+//    RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_OTG_HS, DISABLE) ; 
 }
 
 

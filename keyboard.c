@@ -47,7 +47,7 @@
 // number of passes to integrate
 //#define PASSES 500 // 50ms per report
 //#define PASSES 100 // 10ms per report
-#define PASSES 200 // 20ms per report
+#define PASSES 150
 
 
 #define MAX_HITS 16
@@ -63,7 +63,8 @@ int blacklist[MAX_HITS];
 
 uint8_t current_report[REPORT_SIZE];
 uint8_t prev_report[REPORT_SIZE];
-volatile int initialized = 0;
+volatile int connected = 0;
+extern USB_OTG_CORE_HANDLE  USB_OTG_dev;
 
 // got chars from the host
 uint8_t class_cb_DataOut (void  *pdev, uint8_t epnum)
@@ -462,6 +463,28 @@ int has_next()
     return (next_hits[0] != 0);
 }
 
+void assert_wakeup()
+{
+//    GPIO_PinAFConfig(GPIOB, GPIO_PinSource14, 0);
+//    GPIO_PinAFConfig(GPIOB, GPIO_PinSource15, 0);
+	GPIO_InitTypeDef  GPIO_InitStructure;
+    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_14 | GPIO_Pin_15;
+    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_OUT;
+    GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
+    GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_NOPULL;
+    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_100MHz;
+    GPIO_Init(GPIOB, &GPIO_InitStructure);
+    SET_PIN(GPIOB, (1 << 14));
+    CLEAR_PIN(GPIOB, (1 << 15));
+
+
+    close_usb();
+
+//    while(1)
+//    {
+//    }
+}
+
 int main(void)
 {
 	int i, j, k;
@@ -494,6 +517,8 @@ int main(void)
     }
     setup_pins(-1);
 
+
+
 	RCC_APB2PeriphClockCmd(RCC_APB2Periph_TIM10, ENABLE);
     TIM_TimeBaseInitTypeDef  TIM_TimeBaseStructure;
 	TIM_DeInit(TIM10);
@@ -521,6 +546,8 @@ int main(void)
  	NVIC_Init(&NVIC_InitStructure);
     USART_ITConfig(USART6, USART_IT_RXNE, ENABLE);
 
+
+
 	init_usb();
 
 
@@ -528,6 +555,10 @@ int main(void)
     int tick = 0;
 // total scans in the integration
     int total_counter = 0;
+// benchmarking
+    int scans = 0;
+    int do_wakeup = 0;
+    int want_usb = 0;
     bzero(next_hits, sizeof(int) * MAX_HITS);
     bzero(prev_hits, sizeof(int) * MAX_HITS);
     bzero(blacklist, sizeof(int) * MAX_HITS);
@@ -538,7 +569,8 @@ int main(void)
     while(1)
     {
         HANDLE_UART_OUT
-        handle_usb();
+// poll USB to use the UART
+        if(!do_wakeup) handle_usb();
 
 // read matrix
 #ifdef TEST_KEYS
@@ -569,107 +601,119 @@ int main(void)
 
 #ifndef TEST_KEYS
 // integrate all the currently pressed keys
-        if(initialized)
-        {
-            int prev_gnd = -1;
+        int prev_gnd = -1;
 
 // test each GND pin
-            for(i = GND1; i < GND2; i++)
-            {
+        for(i = GND1; i < GND2; i++)
+        {
 // reset the last GND pin
-                if(i > GND1)
-                {
-                    SET_PIN(pins[i - 1].reg, (1 << pins[i - 1].number));
-                }
-                else
-                {
-                    SET_PIN(pins[GND2 - 1].reg, (1 << pins[GND2 - 1].number));
-                }
+            if(i > GND1)
+            {
+                SET_PIN(pins[i - 1].reg, (1 << pins[i - 1].number));
+            }
+            else
+            {
+                SET_PIN(pins[GND2 - 1].reg, (1 << pins[GND2 - 1].number));
+            }
 // wait for pins to rise
-                udelay(DELAY1);
+            udelay(DELAY1);
 // lower the current GND pin
-                CLEAR_PIN(pins[i].reg, (1 << pins[i].number));
+            CLEAR_PIN(pins[i].reg, (1 << pins[i].number));
 // wait for pins to lower
-                udelay(DELAY2);
+            udelay(DELAY2);
 
 // scan all the sense pins
-                for(j = 0; j < TOTAL_KEYS; j++)
+            for(j = 0; j < TOTAL_KEYS; j++)
+            {
+                const key_t *current_key = &keys[j];
+                if(current_key->gnd == i)
                 {
-                    const key_t *current_key = &keys[j];
-                    if(current_key->gnd == i)
+                    int sense = current_key->sense;
+                    if(PIN_IS_CLEAR(pins[sense].reg, (1 << pins[sense].number)))
                     {
-                        int sense = current_key->sense;
-                        if(PIN_IS_CLEAR(pins[sense].reg, (1 << pins[sense].number)))
+                        total_mod |= current_key->mod;
+                        if(current_key->momentary)
                         {
-                            total_mod |= current_key->mod;
-                            if(current_key->momentary)
-                            {
-                                add_keypress(current_key->momentary);
-                            }
+                            add_keypress(current_key->momentary);
                         }
                     }
                 }
             }
+        }
 
 // update the integration
-            total_counter++;
-            if(total_counter >= PASSES)
-            {
+        total_counter++;
+        if(total_counter >= PASSES)
+        {
 //if(ignore_key) print_text("IGNORE KEY\n");
-                current_report[0] = total_mod;
+            current_report[0] = total_mod;
 
 // erase the blacklist if no hits
-                if(next_hits[0] == 0)
-                    bzero(blacklist, sizeof(int) * MAX_HITS);
+            if(next_hits[0] == 0)
+                bzero(blacklist, sizeof(int) * MAX_HITS);
 
 // report the 1st hit which is not in the previous hits
-                current_report[2] = 0;
+            current_report[2] = 0;
+            for(i = 0; i < MAX_HITS; i++)
+            {
+                if(next_hits[i] != 0 && !prev_exists(next_hits[i]))
+                {
+                    current_report[2] = next_hits[i];
+// blacklist the hits which we're not using
+                    blacklist_except(next_hits[i]);
+                    break;
+                }
+            }
+
+// Reuse the previous report's key if it's still down
+            if(current_report[2] == 0)
+            {
+                if(prev_report[2] && next_exists(prev_report[2]))
+                    current_report[2] = prev_report[2];
+            }
+
+// Get the 1st hit which isn't blacklisted
+            if(current_report[2] == 0)
+            {
                 for(i = 0; i < MAX_HITS; i++)
                 {
-                    if(next_hits[i] != 0 && !prev_exists(next_hits[i]))
+                    if(next_hits[i] != 0 && 
+                        !is_blacklisted(next_hits[i]))
                     {
                         current_report[2] = next_hits[i];
-// blacklist the hits which we're not using
-                        blacklist_except(next_hits[i]);
                         break;
                     }
                 }
-
-// Reuse the previous report's key if it's still down
-                if(current_report[2] == 0)
-                {
-                    if(prev_report[2] && next_exists(prev_report[2]))
-                        current_report[2] = prev_report[2];
-                }
-
-// Get the 1st hit which isn't blacklisted
-                if(current_report[2] == 0)
-                {
-                    for(i = 0; i < MAX_HITS; i++)
-                    {
-                        if(next_hits[i] != 0 && 
-                            !is_blacklisted(next_hits[i]))
-                        {
-                            current_report[2] = next_hits[i];
-                            break;
-                        }
-                    }
-                }
-
-                if(memcmp(current_report, prev_report, REPORT_SIZE))
-                {
-                    print_buffer(current_report, 4);
-                    memcpy(prev_report, current_report, REPORT_SIZE);
-                    usb_start_transmit(current_report, REPORT_SIZE, 0);
-                }
-                send_uart(0);
-
-// reset the integration
-                total_counter = 0;
-                total_mod = 0;
-                memcpy(prev_hits, next_hits, sizeof(int) * MAX_HITS);
-                bzero(next_hits, sizeof(int) * MAX_HITS);
             }
+
+            if(memcmp(current_report, prev_report, REPORT_SIZE))
+            {
+                print_buffer(current_report, 4);
+                memcpy(prev_report, current_report, REPORT_SIZE);
+                if(connected)
+                    usb_start_transmit(current_report, REPORT_SIZE, 0);
+                else
+                if(!do_wakeup && (current_report[0] || current_report[2]))
+                {
+// key down without USB
+                    do_wakeup = 1;
+                    assert_wakeup();
+                }
+                else
+                if(do_wakeup && !current_report[0] && !current_report[2])
+                {
+                    do_wakeup = 0;
+// restart USB
+                    init_usb();
+                }
+            }
+
+            scans++;
+// reset the integration
+            total_counter = 0;
+            total_mod = 0;
+            memcpy(prev_hits, next_hits, sizeof(int) * MAX_HITS);
+            bzero(next_hits, sizeof(int) * MAX_HITS);
         }
 #endif // !TEST_KEYS
 
@@ -680,6 +724,16 @@ int main(void)
     		TIM10->SR = ~TIM_FLAG_Update;
 		    tick++;
 
+#ifndef TEST_KEYS
+            if(tick >= HZ)
+            {
+                tick = 0;
+                print_text("scans=");
+                print_number(scans);
+                print_lf();
+                scans = 0;
+            }
+#endif // !TEST_KEYS
 
 // test keys
 #ifdef TEST_KEYS
@@ -697,7 +751,7 @@ int main(void)
             {
                 tick = 0;
 
-                if(initialized)
+                if(connected)
                 {
 //                    send_uart('.');
 
