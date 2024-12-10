@@ -22,6 +22,7 @@
 
 #include "uart.h"
 
+extern int connected;
 
 /* Includes ------------------------------------------------------------------*/
 #include "usb_dcd_int.h"
@@ -273,6 +274,10 @@ print_text("wkupintr\n");
     {
 print_text("usbsuspend\n");
 //TRACE
+// reset it without trying to handle the suspend/resume states
+//        NVIC_SystemReset();
+// next keypress resets it
+      connected = 0;
       retval |= DCD_HandleUSBSuspend_ISR(pdev);
     }
 
